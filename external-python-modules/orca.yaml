@@ -1,0 +1,27 @@
+apiVersion: '1.0'
+version: '0.1'
+name: 'check if netcdf file exists for current hour'
+var:
+  forecast: 0
+  nomadsUrl: 'https://nomads.ncep.noaa.gov/pub/data/nccf/com/nwm/prod/nwm.{0}/short_range/'
+  fileName: 'nwm.t{0}z.short_range.channel_rt'
+job:
+    - task: get_today_1
+      python: ./scripts/scrape.py
+      config:
+        callable: get_today
+        returns: today
+      outputs:
+        - today
+    - task: scrape
+      python: ./scripts/scrape.py
+      config:
+        callable: scrape_html
+        returns: current_file_exists
+      inputs:
+        url: var.nomadsUrl
+        today: task.get_today.today
+        forecast: var.forecast
+        file: var.fileName
+      outputs:
+        - current_file_exists

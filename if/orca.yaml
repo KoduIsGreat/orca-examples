@@ -1,0 +1,16 @@
+apiVersion: '1.0'
+name: 'if example'
+version: '0.1'
+var:
+  name: 'Susie'
+job:
+  - if: 5 > 0
+    do:
+      - task: hello
+        python: |
+          msg = 'Hello {0}'.format(person)
+          print(msg)
+        inputs:
+          person: var.name
+  - task: always_run
+    python: print('This is always run!')

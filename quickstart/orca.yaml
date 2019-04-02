@@ -1,0 +1,6 @@
+apiVersion: '1.0'
+version: '0.1'
+name: 'quickstart example'
+job:
+    - task: hello_world
+      python: print('Hello World!')
