@@ -1,0 +1,21 @@
+apiVersion: '1.0'
+version: '0.1'
+name: 'http json test'
+
+job:
+  - task: get_areas
+    http: https://waterforecast.rtiamanzi.org/api/v1/areas/data
+    config:
+      header:
+        Authorization: 'Bearer ((access_token))'
+    inputs:
+      time: '2019-04-03T10:00:00Z'
+    outputs:
+      - json
+
+  - task: write_area_csv
+    python: ./scripts/harvest.py
+    config:
+      callable: write_files
+    inputs:
+      areas: task.get_areas.json

@@ -1,4 +1,4 @@
 **/out.json
 .idea/
-.dot
+*.dot
 **/out

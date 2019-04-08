@@ -1,0 +1,37 @@
+apiVersion: '1.0'
+
+version: '0.1'
+name: 'calculate forecast normals on areas'
+job:
+  - task: areas
+    http: http://demo.waterforecast.rtiamanzi.org/api/v1/areas/data
+    outputs:
+      - json
+  - task: get_comids
+    python: |
+      from functools import reduce
+      catchments = list( map (lambda a: a['catchments'], areas) )
+      comids = reduce(lambda c, c1: c+c1, comids)
+    inputs:
+      areas: task.catchments.json
+    outputs:
+      - comids
+
+  - task: harvest_nwm
+    csip: http://ehs-csip-nwm.eastus.azurecontainer.io:8080/csip.nwm/d/netcdf/1.0
+    inputs:
+      comids: task.get_ids.comids
+      fcTimesToHarvest: [0]
+      property: 'streamflow'
+      type: 'short_range'
+    outputs:
+      - forecasts
+
+  - task: aggregate
+    csip: http://ehs-csip-tagg.eastus.azurecontainer.io:8080/csip.temporal-aggregator/d/temporal/parameter/1.0
+    inputs:
+      timeSeries: task.harvest_nwm.forecasts
+      type: 'hour'
+      calc: 'avg'
+    outputs:
+      - data
