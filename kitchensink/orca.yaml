@@ -4,23 +4,26 @@ version: '0.1'
 name: 'calculate forecast normals on areas'
 job:
   - task: areas
-    http: http://demo.waterforecast.rtiamanzi.org/api/v1/areas/data
+    http: https://demo.waterforecast.rtiamanzi.org/api/v1/areas/data
     outputs:
       - json
+
+
   - task: get_comids
     python: |
       from functools import reduce
       catchments = list( map (lambda a: a['catchments'], areas) )
-      comids = reduce(lambda c, c1: c+c1, comids)
+      comids = reduce(lambda c, c1: c+c1, catchments)
+      ids = list ( map ( lambda c: c['comid'], comids))
     inputs:
-      areas: task.catchments.json
+      areas: task.areas.json
     outputs:
-      - comids
+      - ids
 
   - task: harvest_nwm
     csip: http://ehs-csip-nwm.eastus.azurecontainer.io:8080/csip.nwm/d/netcdf/1.0
     inputs:
-      comids: task.get_ids.comids
+      comids: task.get_comids.ids
       fcTimesToHarvest: [0]
       property: 'streamflow'
       type: 'short_range'

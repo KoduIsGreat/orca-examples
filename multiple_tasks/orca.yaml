@@ -4,7 +4,7 @@ version: '0.1'
 name: 'calculate forecast normals on areas'
 job:
   - task: catchments
-    http: http://demo.waterforecast.rtiamanzi.org/api/v1/catchments
+    http: https://demo.waterforecast.rtiamanzi.org/api/v1/catchments
     outputs:
       - json
 

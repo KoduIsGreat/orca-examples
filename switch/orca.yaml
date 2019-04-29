@@ -2,7 +2,7 @@ apiVersion: '1.0'
 name: 'switch example'
 version: '0.1'
 var:
-  select: 'test5'
+  select: 'even'
 job:
   - for: i, range(0,10)
     do:
@@ -12,9 +12,10 @@ job:
           select = 'even' if remainder == 0 else 'odd'
         inputs:
           counter: i
+        annotations: { "for" : "i, range(0,10)"}
         outputs:
           - select
-      - switch: task.generate_cond.select
+      - switch: task.generate_cond
         even:
           - task: even_task_1
             python: print('hello')
