@@ -1,0 +1,281 @@
+apiVersion: '1.0'
+
+name: Workflow01 example.
+version: '0.1'
+
+# global variables (mapped from input.json)
+var:
+  output_dir: 'output'
+  nwm_csv: 'CHRTOUT.streamflow.Merged.csv'
+  
+  source_com_id: '9731264'
+  source_gage_id: '02146285'
+  target_com_id: '9731476'
+  target_gage_id: '0214627970'
+
+  # NWM variables
+  nwm_aggregate_duration: 'daily'
+  nwm_aggregate_method: 'mean'
+  nwm_unit_conversion: 35.3147 
+  
+  # Adjustment parameter
+  usgs_fill_gap_method: 'mean'
+  adjustment_stat: 'mean'
+
+job:
+# Get started
+  - task: start
+    python: |
+        import os
+        print('Starting worlflow: ')
+        os.makedirs(output, exist_ok=True)
+        
+    inputs:
+        output: var.output_dir
+        
+        
+  - task: get_streamflow
+    http: https://alm.engr.colostate.edu/cb/displayDocument/CHRTOUT.streamflow.Merged.csv?raw=true&doc_id=70250
+    config:
+        method: GET
+    outputs:
+        - data
+
+  - task: write_area_csv
+    python: |
+        import os
+        with open(os.path.join(output_dir, nwm_csv), 'wb') as csvfile:
+            csvfile.write(data)
+            
+    inputs:
+        data: task.get_streamflow.data
+        output_dir: var.output_dir
+        nwm_csv: var.nwm_csv
+      
+# Fetch NWM time-series
+  - task: read_data 
+    python: |
+        import os
+        import Read_NWM_Streamflow
+        
+        def read_nwm_data(com_id):
+            f = os.path.join(output_dir, '{0}.json'.format(com_id))
+            n_csv = os.path.join(output_dir, nwm_csv)
+            s = Read_NWM_Streamflow.Streamflow(com_id, n_csv, f)
+            s.get_data()
+            return f
+
+        source_nwm = read_nwm_data(source_com_id)
+        target_nwm = read_nwm_data(target_com_id)
+        
+    inputs:
+        output_dir: var.output_dir
+        nwm_csv: var.nwm_csv
+        source_com_id: var.source_com_id
+        target_com_id: var.target_com_id
+        
+    outputs:
+        - source_nwm 
+        - target_nwm
+        
+# Aggregate NWM time-series
+  - task: aggregate
+    python: |
+        import os
+        import Aggregate_TS
+  
+        def aggregate_nwm_data(com_id, nwm):
+            f = os.path.join(output_dir, '{0}_agr.json'.format(com_id))
+            s = Aggregate_TS.AggregateTS(nwm, f, nwm_aggregate_duration, nwm_aggregate_method)
+            s.process()
+            return f
+
+        source_nwm = aggregate_nwm_data(source_com_id, source_nwm)
+        target_nwm = aggregate_nwm_data(target_com_id, target_nwm)
+
+    inputs:
+        output_dir: var.output_dir
+        nwm_aggregate_duration: var.nwm_aggregate_duration
+        nwm_aggregate_method: var.nwm_aggregate_method
+        source_com_id: var.source_com_id
+        target_com_id: var.target_com_id
+        source_nwm: task.read_data.source_nwm
+        target_nwm: task.read_data.target_nwm
+        
+    outputs:
+        - source_nwm 
+        - target_nwm
+
+
+# Unit Conversion
+  - task: convert
+    python: |
+        import os
+        import TS_UnitConversion
+
+        def unit_conversion_nwm_data(com_id, nwm):
+            f = os.path.join(output_dir, '{0}_uc.json'.format(com_id))
+            s = TS_UnitConversion.TSConvertUnits(nwm, nwm_unit_conversion, f)
+            s.process()
+            return f
+
+        source_nwm = unit_conversion_nwm_data(source_com_id, source_nwm)
+        target_nwm = unit_conversion_nwm_data(target_com_id, target_nwm)
+        
+    inputs:
+        output_dir: var.output_dir
+        nwm_unit_conversion: var.nwm_unit_conversion
+        source_com_id: var.source_com_id
+        target_com_id: var.target_com_id
+        source_nwm: task.aggregate.source_nwm
+        target_nwm: task.aggregate.target_nwm
+
+    outputs:
+        - source_nwm 
+        - target_nwm
+
+
+# Get USGS data        
+  - task: usgs_data
+    python: |
+        import os
+        import Get_USGS_Streamflow_Daily_Mean
+        
+        def get_usgs_data(gage_id):
+            js = os.path.join(output_dir, '{0}.json'.format(gage_id))
+            s = Get_USGS_Streamflow_Daily_Mean.Streamflow(gage_id, '1950-01-01', '2018-12-31', js)
+            s.get_data()
+            return js
+            
+        source_usgs = get_usgs_data(source_gage_id)
+        target_usgs = get_usgs_data(target_gage_id)        
+        
+    inputs:
+        output_dir: var.output_dir
+        source_gage_id: var.source_gage_id
+        target_gage_id: var.target_gage_id
+        
+    outputs:
+        - source_usgs 
+        - target_usgs
+        
+# Fill gaps        
+  - task: fill
+    python: |
+        import os
+        import Fill_TS_Gaps
+        
+        def fill_usgs_data(gage_id, js):
+            js_out = os.path.join(output_dir, '{0}_filled.json'.format(gage_id))
+            g = Fill_TS_Gaps.FillTS(js, js_out, usgs_fill_gap_method)
+            g.process()
+            return js_out
+        
+        source_usgs = fill_usgs_data(source_gage_id, source_usgs)
+        target_usgs = fill_usgs_data(target_gage_id, target_usgs)        
+
+    inputs:
+        output_dir: var.output_dir
+        usgs_fill_gap_method: var.usgs_fill_gap_method
+        source_gage_id: var.source_gage_id
+        target_gage_id: var.target_gage_id
+        source_usgs: task.usgs_data.source_usgs
+        target_usgs: task.usgs_data.target_usgs
+        
+    outputs:
+        - source_usgs 
+        - target_usgs
+        
+        
+# Join timeseries
+  - task: join
+    python: |
+        import os
+        import Join_TS
+    
+        def join_nwm_usgs(com_id, gage_id, nwm_in, usgs_in):
+            nwm_out = os.path.join(output_dir, '{0}_joined.json'.format(com_id))
+            usgs_out = os.path.join(output_dir, '{0}_joined.json'.format(gage_id))
+            j = Join_TS.JoinTS(nwm_in, usgs_in, nwm_out, usgs_out)
+            j.process()
+            return [nwm_out, usgs_out]
+
+        [source_nwm, source_usgs] = join_nwm_usgs(source_com_id, source_gage_id, source_nwm, source_usgs)
+        [target_nwm, target_usgs] = join_nwm_usgs(target_com_id, target_gage_id, target_nwm, target_usgs)    
+        
+    inputs:
+        output_dir: var.output_dir
+        source_com_id: var.source_com_id
+        source_gage_id: var.source_gage_id
+        source_nwm: task.convert.source_nwm
+        source_usgs: task.fill.source_usgs
+        target_com_id: var.target_com_id
+        target_gage_id: var.target_gage_id
+        target_nwm: task.convert.target_nwm
+        target_usgs: task.fill.target_usgs
+        
+    outputs:
+        - source_usgs 
+        - target_usgs
+        - source_nwm
+        - target_nwm
+     
+        
+# Error stats
+  - task: stats
+    python: |
+        import os
+        import Calculate_Error01
+        
+        source_error = os.path.join(output_dir, '{0}_error.json'.format(source_com_id))
+        b = Calculate_Error01.ErrorStats(source_usgs, source_nwm, source_error)
+        b.process()        
+        
+    inputs:
+        output_dir: var.output_dir
+        source_com_id: var.source_com_id
+        source_nwm: task.join.source_nwm
+        source_usgs: task.join.source_usgs
+        
+        
+# Adjust
+  - task: adjust
+    python: |
+        import os
+        import Adjust_TS01
+        
+        target_nwm_adj = os.path.join(output_dir, '{0}_adjusted.json'.format(target_com_id))
+        source_error = os.path.join(output_dir, '{0}_error.json'.format(source_com_id))
+        a = Adjust_TS01.AdjustTS(target_nwm, target_nwm_adj, source_error, adjustment_stat)
+        a.process()
+
+    inputs:
+        output_dir: var.output_dir
+        target_com_id: var.target_com_id
+        source_com_id: var.source_com_id
+        target_nwm: task.join.target_nwm
+        adjustment_stat: var.adjustment_stat
+        
+
+# Skill score
+  - task: skill
+    python: |
+        import os
+        import TS_SkillScore
+
+        skill = os.path.join(output_dir, '{0}_skill.json'.format(target_com_id))
+        s = TS_SkillScore.SkillScores(target_usgs, target_nwm, skill)
+        s.process()
+
+        # after adjustment
+        target_nwm_adj = os.path.join(output_dir, '{0}_adjusted.json'.format(target_com_id))
+        adj_skill = os.path.join(output_dir, '{0}_adj_skill.json'.format(target_com_id))
+        s = TS_SkillScore.SkillScores(target_usgs, target_nwm_adj, adj_skill)
+        s.process()
+    
+    inputs:
+        output_dir: var.output_dir
+        target_com_id: var.target_com_id
+        target_usgs: task.join.target_usgs
+        target_nwm: task.join.target_nwm
+
